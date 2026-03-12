@@ -20,7 +20,18 @@ Running environment refer to: [gazebo_env_dockerfile](https://github.com/dfl-rla
 |bigHHH | indoor, closure, multi room, no stairs | ![alt text](assets/scene2.png) |
 |building | indoor, closure, multi floor, stairs | not ready |
 
-Launch with:
+
+## Install
+```bash
+# dependencies
+rosdep install --from-paths . --ignore-src -r -y
+# build
+conda deactivate
+colcon build --symlink-install
+source install/setup.bash (.zsh)
+```
+
+## Launch with:
 ```bash
 # Go2 run
 ros2 launch go2_config go2_lidar_gps.launch.py
