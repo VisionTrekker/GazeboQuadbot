@@ -29,7 +29,18 @@ to one of the following directories:
 - ~/.gazebo/models/:
 
 
-Launch with:
+
+## Install
+```bash
+# dependencies
+rosdep install --from-paths . --ignore-src -r -y
+# build
+conda deactivate
+colcon build --symlink-install
+source install/setup.bash (.zsh)
+```
+
+## Launch with:
 ```bash
 # Go2 run
 ros2 launch robot_scene go2_lidar_gps.launch.py
