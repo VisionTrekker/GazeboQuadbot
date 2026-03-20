@@ -6,7 +6,8 @@ from launch_ros.actions import Node
 
 from launch import LaunchDescription
 from launch.actions import (DeclareLaunchArgument, ExecuteProcess,
-                            IncludeLaunchDescription)
+                            IncludeLaunchDescription, RegisterEventHandler)
+from launch.event_handlers import (OnProcessStart, OnProcessExit)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import Command, LaunchConfiguration, PythonExpression
@@ -127,22 +128,52 @@ def generate_launch_description():
 
     robot_description = {"robot_description": Command(["xacro ", LaunchConfiguration("description_path")])}
 
-
-    load_joint_state_controller = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'joint_states_controller'],
-        output='screen',
+    spawn_joint_state_controller = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["joint_states_controller", "-c", "/controller_manager"],
+        output="screen",
     )
 
-    load_joint_trajectory_position_controller = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'joint_group_position_controller'],
-        output='screen'
+    spawn_joint_trajectory_position_controller = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["joint_group_position_controller", "-c", "/controller_manager"],
+        output="screen",
     )
-    load_joint_trajectory_effort_controller = ExecuteProcess(
-        cmd=['ros2', 'control', 'load_controller', '--set-state', 'active',
-             'joint_group_effort_controller'],
-        output='screen'
+
+    spawn_joint_trajectory_effort_controller = Node(
+        package="controller_manager",
+        executable="spawner",
+        arguments=["joint_group_effort_controller", "-c", "/controller_manager"],
+        output="screen",
+    )
+
+    # Use an event handler to trigger the spawner after Gazebo has started
+    spawn_robot_event_handler = RegisterEventHandler(
+        event_handler=OnProcessStart(
+            target_action=start_gazebo_server_cmd,
+            on_start=[start_gazebo_spawner_cmd]
+        )
+    )
+
+    # Use an event handler to load controllers after the robot has been spawned
+    # Chain the controller spawners to avoid race conditions
+    load_joint_state_controller_event_handler = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=start_gazebo_spawner_cmd,
+            on_exit=[spawn_joint_state_controller],
+        )
+    )
+
+    load_other_controllers_event_handler = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=spawn_joint_state_controller,
+            on_exit=[
+                # spawn_joint_trajectory_position_controller,
+                spawn_joint_trajectory_effort_controller
+            ],
+        )
     )
 
     # joint_group_position_controller
@@ -163,10 +194,12 @@ def generate_launch_description():
             declare_description_path,
             start_gazebo_server_cmd,
             start_gazebo_client_cmd,
-            start_gazebo_spawner_cmd,
-            load_joint_state_controller,
-            # load_joint_trajectory_position_controller
-            load_joint_trajectory_effort_controller,
+            # start_gazebo_spawner_cmd,
+            # load_joint_state_controller,
+            # load_joint_trajectory_effort_controller,
+            spawn_robot_event_handler,
+            load_joint_state_controller_event_handler,
+            load_other_controllers_event_handler,
             contact_sensor
         ]
     )
