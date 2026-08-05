@@ -36,7 +36,7 @@ static constexpr uint8_t     kMid360Line      = 0;     // mid360 is single-line
  */
 struct RotateInfo
 {
-    double time;      ///< 时间戳 (用于点云时序)
+    double time_us;   ///< CSV 第一列：帧内扫描偏移（微秒 us）
     double azimuth;   ///< 方位角 (水平角度, 弧度)
     double zenith;    ///< 天顶角 (垂直角度, 弧度)
 };
@@ -62,6 +62,26 @@ public:
      * @param _sdf SDF 元素指针
      */
     void Load(sensors::SensorPtr _parent, sdf::ElementPtr _sdf);
+
+    // ============================================================
+    // 消息构造辅助 (public for TDD testability)
+    // ============================================================
+
+    /// @brief 静态工厂：生成单个 PointField 描述
+    static sensor_msgs::msg::PointField MakeField(
+        const std::string& name, uint32_t offset, uint8_t datatype);
+
+    /// @brief 填充 PointCloud2 6 字段布局（x,y,z,intensity,ring,timestamp）
+    void SetPointCloud2Fields(sensor_msgs::msg::PointCloud2& pc);
+
+    /// @brief 把 Gazebo 仿真时间 builtin_interfaces::Time
+    builtin_interfaces::msg::Time ToRosTime(const gazebo::common::Time& gz_time) const;
+
+    /// @brief 按 kPointStepBytes 布局把一行点写入字节缓冲
+    void AppendPc2Row(std::vector<uint8_t>& buf,
+                      float x, float y, float z,
+                      float intensity, uint16_t ring,
+                      double timestamp);
 
 protected:
     /**
@@ -107,26 +127,6 @@ private:
      * @param scan 激光扫描消息指针
      */
     void InitializeScan(msgs::LaserScan*& scan);
-
-    // ============================================================
-    // 消息构造辅助
-    // ============================================================
-
-    /// @brief 把 Gazebo 仿真时间 builtin_interfaces::Time
-    builtin_interfaces::msg::Time ToRosTime(const gazebo::common::Time& gz_time) const;
-
-    /// @brief 填充 PointCloud2 6 字段布局（x,y,z,intensity,ring,timestamp）
-    void SetPointCloud2Fields(sensor_msgs::msg::PointCloud2& pc);
-
-    /// @brief 静态工厂：生成单个 PointField 描述
-    static sensor_msgs::msg::PointField MakeField(
-        const std::string& name, uint32_t offset, uint8_t datatype);
-
-    /// @brief 按 kPointStepBytes 布局把一行点写入字节缓冲
-    void AppendPc2Row(std::vector<uint8_t>& buf,
-                      float x, float y, float z,
-                      float intensity, uint16_t ring,
-                      double timestamp);
 
     // ============================================================
     // 成员变量

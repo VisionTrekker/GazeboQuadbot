@@ -6,6 +6,7 @@
  * 发布标准 ROS2 PointCloud2 消息
  */
 
+#include <algorithm>
 #include <cstring>
 #include <rclcpp/rclcpp.hpp>
 #include <gazebo_ros/node.hpp>
@@ -108,7 +109,7 @@ static void convertDataToRotateInfo(
         if (data.size() == 3)
         {
             RotateInfo info;
-            info.time = data[0];
+            info.time_us = data[0];  // CSV column 1 is microseconds (header Time/us)
             info.azimuth = data[1] * deg_to_rad;
             // 转换为标准右手坐标系角度
             info.zenith = data[2] * deg_to_rad - M_PI_2;
@@ -246,108 +247,92 @@ void Mid360PointsPlugin::Load(sensors::SensorPtr _parent, sdf::ElementPtr sdf)
 
 void Mid360PointsPlugin::OnNewLaserScans()
 {
-    if (!rayShape_) return;
+  if (!rayShape_) return;
 
-    // 初始化射线扫描点对
-    std::vector<std::pair<int, RotateInfo>> points_pair;
-    InitializeRays(points_pair, rayShape_);
-    rayShape_->Update();
+  // Initialize ray scan point pairs
+  std::vector<std::pair<int, RotateInfo>> points_pair;
+  InitializeRays(points_pair, rayShape_);
+  rayShape_->Update();
 
-    // 设置激光扫描消息时间戳
-    msgs::Set(laserMsg_.mutable_time(), world->SimTime());
-    msgs::LaserScan* scan = laserMsg_.mutable_scan();
-    InitializeScan(scan);
+  // Set the internal laser scan message timestamp (unchanged behavior)
+  msgs::Set(laserMsg_.mutable_time(), world->SimTime());
+  msgs::LaserScan* scan = laserMsg_.mutable_scan();
+  InitializeScan(scan);
 
-    // 获取仿真时间 (纳秒)
-    double sim_time_sec = world->SimTime().Double();
+  // ----- Time (single source: Gazebo sim time) -----
+  const gazebo::common::Time& gz_sim_time = world->SimTime();
+  const double sim_time_sec = gz_sim_time.Double();
 
-    // 创建 PointCloud2 消息 (PointXYZI + timestamp 格式)
-    sensor_msgs::msg::PointCloud2 cloud2;
-    cloud2.header.stamp.sec = static_cast<int32_t>(sim_time_sec);
-    cloud2.header.stamp.nanosec = static_cast<uint32_t>((sim_time_sec - cloud2.header.stamp.sec) * 1e9);
-    cloud2.header.frame_id = raySensor_->Name();
+  // ----- CustomMsg skeleton -----
+  livox_ros_driver2::msg::CustomMsg custom_msg;
+  custom_msg.header.frame_id = raySensor_->Name();
+  custom_msg.header.stamp    = ToRosTime(gz_sim_time);
+  custom_msg.timebase        = 0u;
+  custom_msg.lidar_id        = 0;
+  custom_msg.points.reserve(points_pair.size());
 
-    // 设置点云字段 (x, y, z, intensity, timestamp)
-    cloud2.fields.resize(5);
-    cloud2.fields[0].name = "x";
-    cloud2.fields[0].offset = 0;
-    cloud2.fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
-    cloud2.fields[0].count = 1;
-    cloud2.fields[1].name = "y";
-    cloud2.fields[1].offset = 4;
-    cloud2.fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
-    cloud2.fields[1].count = 1;
-    cloud2.fields[2].name = "z";
-    cloud2.fields[2].offset = 8;
-    cloud2.fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
-    cloud2.fields[2].count = 1;
-    cloud2.fields[3].name = "intensity";
-    cloud2.fields[3].offset = 12;
-    cloud2.fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32;
-    cloud2.fields[3].count = 1;
-    cloud2.fields[4].name = "timestamp";
-    cloud2.fields[4].offset = 16;
-    cloud2.fields[4].datatype = sensor_msgs::msg::PointField::FLOAT64;
-    cloud2.fields[4].count = 1;
+  // ----- PointCloud2 skeleton -----
+  sensor_msgs::msg::PointCloud2 pc2;
+  pc2.header       = custom_msg.header;
+  pc2.header.frame_id = raySensor_->Name();
+  pc2.height       = 1;
+  pc2.is_dense     = true;
+  pc2.is_bigendian = false;
+  SetPointCloud2Fields(pc2);
 
-    cloud2.point_step = 24;  // 4 floats (16 bytes) + 1 double (8 bytes)
-    cloud2.height = 1;
-    cloud2.is_dense = true;
-    cloud2.is_bigendian = false;
+  std::vector<uint8_t> pc2_buf;
+  pc2_buf.reserve(points_pair.size() * kPointStepBytes);
 
-    // 收集有效点
-    std::vector<uint8_t> point_data;
-    point_data.reserve(points_pair.size() * cloud2.point_step);
+  // ----- Shared single loop -----
+  for (const auto& pair : points_pair)
+  {
+    const double range = rayShape_->GetRange(pair.first);
 
-    size_t point_count = 0;
-    for (auto& pair : points_pair)
-    {
-        auto range = rayShape_->GetRange(pair.first);
+    // Drop out-of-range rays (matches old behavior)
+    if (range >= RangeMax() || range <= RangeMin()) continue;
 
-        // 过滤超出范围的点
-        if (range >= RangeMax() || range <= RangeMin())
-        {
-            continue;
-        }
+    const double retro = rayShape_->GetRetro(pair.first);  // 0..1
+    const auto&  info   = pair.second;                    // RotateInfo
 
-        // 计算点云坐标
-        auto rotate_info = pair.second;
-        ignition::math::Quaterniond ray;
-        ray.Euler(ignition::math::Vector3d(0.0, rotate_info.zenith, rotate_info.azimuth));
-        auto axis = ray * ignition::math::Vector3d(1.0, 0.0, 0.0);
-        auto point = range * axis;
+    // Geometry (unchanged from previous implementation)
+    ignition::math::Quaterniond ray;
+    ray.Euler(ignition::math::Vector3d(0.0, info.zenith, info.azimuth));
+    const auto axis  = ray * ignition::math::Vector3d(1.0, 0.0, 0.0);
+    const auto point = range * axis;
 
-        // 写入 x, y, z, intensity
-        float x = static_cast<float>(point.X());
-        float y = static_cast<float>(point.Y());
-        float z = static_cast<float>(point.Z());
-        float intensity = 100.0f;
-        // 每个点的时间戳 = 仿真时间 + 点在扫描中的相对时间
-        double timestamp = sim_time_sec + rotate_info.time;
+    // ===== CustomPoint =====
+    livox_ros_driver2::msg::CustomPoint cp;
+    cp.offset_time  = static_cast<uint32_t>(info.time_us * 1000.0);  // us -> ns
+    cp.x            = static_cast<float>(point.X());
+    cp.y            = static_cast<float>(point.Y());
+    cp.z            = static_cast<float>(point.Z());
+    cp.reflectivity = static_cast<uint8_t>(std::clamp(retro * 255.0, 0.0, 255.0));
+    cp.tag          = kMid360Tag;
+    cp.line         = kMid360Line;
+    custom_msg.points.push_back(cp);
 
-        size_t offset = point_data.size();
-        point_data.resize(offset + cloud2.point_step);
-        memcpy(&point_data[offset], &x, sizeof(float));
-        memcpy(&point_data[offset + 4], &y, sizeof(float));
-        memcpy(&point_data[offset + 8], &z, sizeof(float));
-        memcpy(&point_data[offset + 12], &intensity, sizeof(float));
-        memcpy(&point_data[offset + 16], &timestamp, sizeof(double));
-        point_count++;
-    }
+    // ===== PointCloud2 row =====
+    const float    intensity  = cp.reflectivity;
+    const uint16_t ring       = 0u;
+    const double   point_time = sim_time_sec + info.time_us * 1e-6;
+    AppendPc2Row(pc2_buf, cp.x, cp.y, cp.z, intensity, ring, point_time);
+  }
 
-    // 设置点云数据
-    cloud2.width = point_count;
-    cloud2.row_step = cloud2.point_step * cloud2.width;
-    cloud2.data = std::move(point_data);
+  // ----- Publish internal LaserScanStamped (unchanged) -----
+  if (scanPub_ && scanPub_->HasConnections())
+  {
+    scanPub_->Publish(laserMsg_);
+  }
 
-    // 发布 Gazebo 内部消息
-    if (scanPub_ && scanPub_->HasConnections())
-    {
-        scanPub_->Publish(laserMsg_);
-    }
+  // ----- CustomMsg publish -----
+  custom_msg.point_num = static_cast<uint32_t>(custom_msg.points.size());
+  if (customPub_) customPub_->publish(custom_msg);
 
-    // 发布 ROS2 PointCloud2 消息
-    cloudPub_->publish(cloud2);
+  // ----- PointCloud2 publish -----
+  pc2.width    = custom_msg.point_num;
+  pc2.row_step = pc2.width * pc2.point_step;
+  pc2.data     = std::move(pc2_buf);
+  if (cloudPub_) cloudPub_->publish(pc2);
 }
 
 //==============================================================================
