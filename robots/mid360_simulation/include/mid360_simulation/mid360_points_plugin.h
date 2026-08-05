@@ -14,12 +14,19 @@
 #include <gazebo/gazebo.hh>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
+#include <livox_ros_driver2/msg/custom_msg.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 
 #include "mid360_simulation/mid360_ode_multiray_shape.h"
 
 namespace gazebo
 {
+
+// Layout / protocol constants (see spec §4)
+static constexpr std::size_t kPointStepBytes = 32;  // bytes per PointCloud2 row
+static constexpr uint8_t     kMid360Tag       = 0x10;  // normal single-echo (FAST-LIO accept)
+static constexpr uint8_t     kMid360Line      = 0;     // mid360 is single-line
 
 /**
  * @struct RotateInfo
@@ -102,6 +109,26 @@ private:
     void InitializeScan(msgs::LaserScan*& scan);
 
     // ============================================================
+    // 消息构造辅助
+    // ============================================================
+
+    /// @brief 把 Gazebo 仿真时间 builtin_interfaces::Time
+    builtin_interfaces::msg::Time ToRosTime(const gazebo::common::Time& gz_time) const;
+
+    /// @brief 填充 PointCloud2 6 字段布局（x,y,z,intensity,ring,timestamp）
+    void SetPointCloud2Fields(sensor_msgs::msg::PointCloud2& pc);
+
+    /// @brief 静态工厂：生成单个 PointField 描述
+    static sensor_msgs::msg::PointField MakeField(
+        const std::string& name, uint32_t offset, uint8_t datatype);
+
+    /// @brief 按 kPointStepBytes 布局把一行点写入字节缓冲
+    void AppendPc2Row(std::vector<uint8_t>& buf,
+                      float x, float y, float z,
+                      float intensity, uint16_t ring,
+                      double timestamp);
+
+    // ============================================================
     // 成员变量
     // ============================================================
 
@@ -137,6 +164,9 @@ private:
 
     /// @brief PointCloud2 发布器
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloudPub_;
+
+    /// @brief livox CustomMsg publisher (FAST-LIO2 path)
+    rclcpp::Publisher<livox_ros_driver2::msg::CustomMsg>::SharedPtr customPub_;
 
     /// @brief 父坐标系名称
     std::string parentName_;
