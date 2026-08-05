@@ -20,6 +20,11 @@ def generate_launch_description():
         default_value="default.world",
         description="World file name to load from the worlds directory"
     )
+    declare_world_init_z = DeclareLaunchArgument(
+        name="world_init_z",
+        default_value="0.45",
+        description="Spawn height of the robot above ground [m]"
+    )
 
     # （可选）阻止Gazebo从互联网自动下载模型（加速本地加载）
     os.environ['GAZEBO_MODEL_DATABASE_URI'] = ""    
@@ -88,7 +93,7 @@ def generate_launch_description():
             "-topic", "robot_description",
             "-x", "0",
             "-y", "0",
-            "-z", "0.5",
+            "-z", LaunchConfiguration("world_init_z"),
         ],
         output="screen",
         parameters=[{"use_sim_time": True}]
@@ -132,6 +137,7 @@ def generate_launch_description():
         mesa_adapter,
         gazebo_gpu_rendering,
         declare_world,
+        declare_world_init_z,
         gzserver_launch,
         gzclient_launch,
         robot_state_publisher_node,

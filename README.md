@@ -29,6 +29,11 @@ to one of the following directories:
 - ~/.gazebo/models/:
 
 
+## Host Env
+- Ubuntu22.04
+- ROS2-Humble
+- oh-my-zsh
+
 
 ## Install
 ```bash
@@ -37,7 +42,7 @@ rosdep install --from-paths . --ignore-src -r -y
 # build
 conda deactivate
 colcon build --symlink-install
-source install/setup.bash (.zsh)
+source install/setup.bash # (.zsh)
 ```
 
 ## Launch with:
