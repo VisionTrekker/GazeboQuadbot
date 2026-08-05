@@ -93,4 +93,11 @@ install(DIRECTORY scan_mode/
 ament_export_libraries(mid360_plugin)
 ament_export_include_directories(include)
 
+# ============================================================
+# Tests
+# ============================================================
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()
+
 ament_package()

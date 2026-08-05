@@ -38,9 +38,8 @@ to one of the following directories:
 ## Install
 ```bash
 # dependencies
-rosdep install --from-paths . --ignore-src -r -y
+rosdep install --from-paths . --ignore-src --rosdistro $ROS_DISTRO -r -y
 # build
-conda deactivate
 colcon build --symlink-install
 source install/setup.bash # (.zsh)
 ```
@@ -69,7 +68,8 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 | /gps/data | sensor_msgs/msg/NavSatFix |
 | /gps_plugin/vel | geometry_msgs/msg/Vector3Stamped |
 | /livox/imu | sensor_msgs/msg/Imu |
-| /livox/lidar | sensor_msgs/msg/PointCloud2 |
+| /livox/lidar | livox_ros_driver2/msg/CustomMsg |
+| /livox/lidar_PointCloud2 | sensor_msgs/msg/PointCloud2 |
 | /robot_description | std_msgs/msg/String |
 | /tf | tf2_msgs/msg/TFMessage |
 | /tf_static | tf2_msgs/msg/TFMessage |

@@ -37,12 +37,17 @@ mid360_simulation/
 - ROS2 (Humble/Foxy)
 - Gazebo 11
 - gazebo_ros_pkgs
+- `livox_ros_driver2`（提供 `CustomMsg`）— 源码：https://github.com/Livox-SDK/livox_ros_driver2
 
 ## 编译
 
+> ⚠️ 本仓库**不**把 `CMAKE_PREFIX_PATH` 写入 `.bashrc` / `.zshrc`。
+> 每次构建前手动 export 一次：
+
 ```bash
+export CMAKE_PREFIX_PATH="/media/lenovo/disk/planner_ws/src/Nav3D/install:$CMAKE_PREFIX_PATH"
 cd ~/your_ws
-colcon build --packages-select mid360_simulation
+colcon build --packages-select mid360_simulation --cmake-clean-cache
 source install/setup.bash
 ```
 
@@ -101,7 +106,8 @@ source install/setup.bash
 
 | 话题名称 | 消息类型 | 说明 |
 |----------|----------|------|
-| `/livox/lidar` | `sensor_msgs/PointCloud2` | 点云数据 |
+| `/livox/lidar` | `livox_ros_driver2/msg/CustomMsg` | Livox 自定义点云（FAST-LIO2 默认订阅） |
+| `/livox/lidar_PointCloud2` | `sensor_msgs/PointCloud2` | 标准点云 6 字段布局（Nav2 / costmap 兼容） |
 
 ## 技术规格
 
