@@ -165,8 +165,12 @@ void Mid360PointsPlugin::Load(sensors::SensorPtr _parent, sdf::ElementPtr sdf)
     gazeboNode_ = transport::NodePtr(new transport::Node());
     gazeboNode_->Init(raySensor_->WorldName());
 
-    // 创建 ROS2 PointCloud2 发布器
+    // 创建 ROS2 PointCloud2 发布器 (Nav2 / costmap path)
     cloudPub_ = rosNode_->create_publisher<sensor_msgs::msg::PointCloud2>(
+        curr_scan_topic + "_PointCloud2", 10);
+
+    // 创建 ROS2 livox CustomMsg 发布器 (FAST-LIO path)
+    customPub_ = rosNode_->create_publisher<livox_ros_driver2::msg::CustomMsg>(
         curr_scan_topic, 10);
 
     // 创建 Gazebo 内部扫描消息发布器
