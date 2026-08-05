@@ -6,6 +6,7 @@
  * 发布标准 ROS2 PointCloud2 消息
  */
 
+#include <cstring>
 #include <rclcpp/rclcpp.hpp>
 #include <gazebo_ros/node.hpp>
 #include <gazebo/physics/Model.hh>
@@ -32,6 +33,59 @@ GZ_REGISTER_SENSOR_PLUGIN(Mid360PointsPlugin)
 Mid360PointsPlugin::Mid360PointsPlugin() {}
 
 Mid360PointsPlugin::~Mid360PointsPlugin() {}
+
+//==============================================================================
+// 消息构造辅助方法 (TDD helpers)
+//==============================================================================
+
+sensor_msgs::msg::PointField Mid360PointsPlugin::MakeField(
+    const std::string& name, uint32_t offset, uint8_t datatype)
+{
+  sensor_msgs::msg::PointField f;
+  f.name = name;
+  f.offset = offset;
+  f.datatype = datatype;
+  f.count = 1u;
+  return f;
+}
+
+void Mid360PointsPlugin::SetPointCloud2Fields(sensor_msgs::msg::PointCloud2& pc)
+{
+  pc.fields.resize(6);
+  pc.fields[0] = MakeField("x",          0,  sensor_msgs::msg::PointField::FLOAT32);
+  pc.fields[1] = MakeField("y",          4,  sensor_msgs::msg::PointField::FLOAT32);
+  pc.fields[2] = MakeField("z",          8,  sensor_msgs::msg::PointField::FLOAT32);
+  pc.fields[3] = MakeField("intensity", 12, sensor_msgs::msg::PointField::FLOAT32);
+  pc.fields[4] = MakeField("ring",      16, sensor_msgs::msg::PointField::UINT16);
+  pc.fields[5] = MakeField("timestamp", 24, sensor_msgs::msg::PointField::FLOAT64);
+  pc.point_step = static_cast<uint32_t>(kPointStepBytes);
+}
+
+builtin_interfaces::msg::Time Mid360PointsPlugin::ToRosTime(
+    const gazebo::common::Time& gz_time) const
+{
+  builtin_interfaces::msg::Time t;
+  t.sec     = static_cast<int32_t>(gz_time.sec);
+  t.nanosec = static_cast<uint32_t>(gz_time.nsec);
+  return t;
+}
+
+void Mid360PointsPlugin::AppendPc2Row(
+    std::vector<uint8_t>& buf,
+    float x, float y, float z,
+    float intensity, uint16_t ring,
+    double timestamp)
+{
+  const size_t off = buf.size();
+  buf.resize(off + kPointStepBytes);
+  std::memcpy(&buf[off +  0], &x,         sizeof(float));
+  std::memcpy(&buf[off +  4], &y,         sizeof(float));
+  std::memcpy(&buf[off +  8], &z,         sizeof(float));
+  std::memcpy(&buf[off + 12], &intensity, sizeof(float));
+  std::memcpy(&buf[off + 16], &ring,      sizeof(uint16_t));
+  // 6 bytes padding (offsets 18..23) already zero from resize()
+  std::memcpy(&buf[off + 24], &timestamp, sizeof(double));
+}
 
 //==============================================================================
 // 辅助函数: 将 CSV 数据转换为旋转信息
