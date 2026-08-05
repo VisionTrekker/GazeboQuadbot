@@ -23,6 +23,7 @@ find_package(tf2_ros REQUIRED)
 find_package(gazebo_dev REQUIRED)
 find_package(gazebo_ros REQUIRED)
 find_package(Boost REQUIRED COMPONENTS chrono)
+find_package(livox_ros_driver2 REQUIRED)
 
 # ============================================================
 # 包含目录设置
@@ -54,6 +55,7 @@ ament_target_dependencies(mid360_plugin
   gazebo_dev
   gazebo_ros
   tf2_ros
+  livox_ros_driver2
 )
 
 # ============================================================
